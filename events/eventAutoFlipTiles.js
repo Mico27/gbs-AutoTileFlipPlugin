@@ -57,6 +57,7 @@ export const compile = (input, helpers) => {
     const newCgbTilesetData = [];
     let tileData = [];
     let flippedTileData = [];
+    
     //first bank 128
     //prefill tileLookup    
     for (let i = 0; i < Math.min(128, (tilesetData.length >> 4)); i++){
@@ -166,12 +167,12 @@ export const compile = (input, helpers) => {
         } else if (newCgbTilesetData.length < 2048) {
           tileLookup[JSON.stringify(tileData)] = { tileId: newCgbTilesetData.length >> 4, isBank2: true };
           newCgbTilesetData.push(...tileData);
-        } else if (tilesetData.length > 4096 && (((newTilesetData.length + newCgbTilesetData.length) & 31) != 0)){
-          tileLookup[JSON.stringify(tileData)] = { tileId: newCgbTilesetData.length >> 4, isBank2: true };
-          newCgbTilesetData.push(...tileData);        
-        } else {
+        } else if (((newTilesetData.length + newCgbTilesetData.length) & 31) == 0){
           tileLookup[JSON.stringify(tileData)] = { tileId: newTilesetData.length >> 4, isBank2: false };
           newTilesetData.push(...tileData); 
+        } else {          
+          tileLookup[JSON.stringify(tileData)] = { tileId: newCgbTilesetData.length >> 4, isBank2: true };
+          newCgbTilesetData.push(...tileData);   
         }
       }
     }
@@ -209,9 +210,9 @@ export const compile = (input, helpers) => {
         } else if (newCgbTilesetData.length < 2048) {
           tileLookup[JSON.stringify(tileData)] = { tileId: newCgbTilesetData.length >> 4, isBank2: true };
           newCgbTilesetData.push(...tileData);
-        //} else if (cgbTilesetData.length > 4096 && (((newTilesetData.length + newCgbTilesetData.length) & 31) != 0)){
-        //  tileLookup[JSON.stringify(tileData)] = { tileId: newTilesetData.length >> 4, isBank2: false };
-        //  newTilesetData.push(...tileData); 
+        } else if (((newTilesetData.length + newCgbTilesetData.length) & 31) == 0){
+          tileLookup[JSON.stringify(tileData)] = { tileId: newTilesetData.length >> 4, isBank2: false };
+          newTilesetData.push(...tileData); 
         } else {          
           tileLookup[JSON.stringify(tileData)] = { tileId: newCgbTilesetData.length >> 4, isBank2: true };
           newCgbTilesetData.push(...tileData);   
@@ -219,16 +220,23 @@ export const compile = (input, helpers) => {
       }
     }
     
+    let new_ui_reserved_offset = ((newTilesetData.length >> 4) > 128 && (newTilesetData.length >> 4) < 192)? (192 - (newTilesetData.length >> 4)): 0;
+    let new_ui_reserved_offset_bank2 = ((newCgbTilesetData.length >> 4) > 128 && (newCgbTilesetData.length >> 4) < 192)? (192 - (newCgbTilesetData.length >> 4)): 0;    
+    
+    let ui_reserved_offset = ((tilesetData.length >> 4) > 128 && (tilesetData.length >> 4) < 192)? (192 - (tilesetData.length >> 4)): 0;
+    let ui_reserved_offset_bank2 = ((cgbTilesetData.length >> 4) > 128 && (cgbTilesetData.length >> 4) < 192)? (192 - (cgbTilesetData.length >> 4)): 0;
     
     //parse tilemap
     for (let y = 0; y < scene.background.height; y++){
       for (let x = 0; x < scene.background.width; x++){
         const tileIndex = y * scene.background.width + x;
         let tileAttr = tilemapAttrData[tileIndex];
-        const tileId = tilemapData[tileIndex];        
+        let tileId = tilemapData[tileIndex];
         if (tileAttr & 0x08 && cgbTilesetData){
+          tileId = (tileId >= 128 && ui_reserved_offset_bank2)? (tileId - ui_reserved_offset_bank2): tileId;
           tileData = cgbTilesetData.slice((tileId << 4), (tileId << 4) + 16);
         } else {
+          tileId = (tileId >= 128 && ui_reserved_offset)? (tileId - ui_reserved_offset): tileId;
           tileData = tilesetData.slice((tileId << 4), (tileId << 4) + 16);
         }
         //no flip check in lookup
@@ -236,10 +244,10 @@ export const compile = (input, helpers) => {
         let existingTile = tileLookup[tileDataHash];
         if (existingTile){
           if (existingTile.isBank2){
-            tilemapData[tileIndex] = (newTilesetData.length > 2048 && newTilesetData.length < 3072)? ((192 - (newTilesetData.length >> 4)) + existingTile.tileId): existingTile.tileId;
+            tilemapData[tileIndex] = (existingTile.tileId >= 128 && new_ui_reserved_offset_bank2)? (existingTile.tileId + new_ui_reserved_offset_bank2): existingTile.tileId;
             tileAttr = (tileAttr | 0x08);
           } else {
-            tilemapData[tileIndex] = (newCgbTilesetData.length > 2048 && newCgbTilesetData.length < 3072)? ((192 - (newCgbTilesetData.length >> 4)) + existingTile.tileId): existingTile.tileId;
+            tilemapData[tileIndex] = (existingTile.tileId >= 128 && new_ui_reserved_offset)? (existingTile.tileId + new_ui_reserved_offset): existingTile.tileId;
             tileAttr = (tileAttr & ~(0x08));
           }          
           tilemapAttrData[tileIndex] = tileAttr & ~(TILE_COLOR_PROP_FLIP_VERTICAL | TILE_COLOR_PROP_FLIP_HORIZONTAL);
@@ -252,10 +260,10 @@ export const compile = (input, helpers) => {
         existingTile = tileLookup[tileDataHash];
         if (existingTile){
           if (existingTile.isBank2){
-            tilemapData[tileIndex] = (newTilesetData.length > 2048 && newTilesetData.length < 3072)? ((192 - (newTilesetData.length >> 4)) + existingTile.tileId): existingTile.tileId;
+            tilemapData[tileIndex] = (existingTile.tileId >= 128 && new_ui_reserved_offset_bank2)? (existingTile.tileId + new_ui_reserved_offset_bank2): existingTile.tileId;
             tileAttr = (tileAttr | 0x08);
           } else {
-            tilemapData[tileIndex] = (newCgbTilesetData.length > 2048 && newCgbTilesetData.length < 3072)? ((192 - (newCgbTilesetData.length >> 4)) + existingTile.tileId): existingTile.tileId;
+            tilemapData[tileIndex] = (existingTile.tileId >= 128 && new_ui_reserved_offset)? (existingTile.tileId + new_ui_reserved_offset): existingTile.tileId;
             tileAttr = (tileAttr & ~(0x08));
           }   
           tilemapAttrData[tileIndex] = tileAttr | TILE_COLOR_PROP_FLIP_HORIZONTAL;
@@ -268,10 +276,10 @@ export const compile = (input, helpers) => {
         existingTile = tileLookup[tileDataHash];
         if (existingTile){
           if (existingTile.isBank2){
-            tilemapData[tileIndex] = (newTilesetData.length > 2048 && newTilesetData.length < 3072)? ((192 - (newTilesetData.length >> 4)) + existingTile.tileId): existingTile.tileId;
+            tilemapData[tileIndex] = (existingTile.tileId >= 128 && new_ui_reserved_offset_bank2)? (existingTile.tileId + new_ui_reserved_offset_bank2): existingTile.tileId;
             tileAttr = (tileAttr | 0x08);
           } else {
-            tilemapData[tileIndex] = (newCgbTilesetData.length > 2048 && newCgbTilesetData.length < 3072)? ((192 - (newCgbTilesetData.length >> 4)) + existingTile.tileId): existingTile.tileId;
+            tilemapData[tileIndex] = (existingTile.tileId >= 128 && new_ui_reserved_offset)? (existingTile.tileId + new_ui_reserved_offset): existingTile.tileId;
             tileAttr = (tileAttr & ~(0x08));
           }   
           tilemapAttrData[tileIndex] = tileAttr | TILE_COLOR_PROP_FLIP_VERTICAL;
@@ -284,10 +292,10 @@ export const compile = (input, helpers) => {
         existingTile = tileLookup[tileDataHash];
         if (existingTile){
           if (existingTile.isBank2){
-            tilemapData[tileIndex] = (newTilesetData.length > 2048 && newTilesetData.length < 3072)? ((192 - (newTilesetData.length >> 4)) + existingTile.tileId): existingTile.tileId;
+            tilemapData[tileIndex] = (existingTile.tileId >= 128 && new_ui_reserved_offset_bank2)? (existingTile.tileId + new_ui_reserved_offset_bank2): existingTile.tileId;
             tileAttr = (tileAttr | 0x08);
           } else {
-            tilemapData[tileIndex] = (newCgbTilesetData.length > 2048 && newCgbTilesetData.length < 3072)? ((192 - (newCgbTilesetData.length >> 4)) + existingTile.tileId): existingTile.tileId;
+            tilemapData[tileIndex] = (existingTile.tileId >= 128 && new_ui_reserved_offset)? (existingTile.tileId + new_ui_reserved_offset): existingTile.tileId;
             tileAttr = (tileAttr & ~(0x08));
           }   
           tilemapAttrData[tileIndex] = tileAttr | TILE_COLOR_PROP_FLIP_VERTICAL | TILE_COLOR_PROP_FLIP_HORIZONTAL;		  
